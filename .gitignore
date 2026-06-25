@@ -1,0 +1,22 @@
+# Python build/cache
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.pytest_cache/
+*.db
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+.DS_Store
+
+# Local Qdrant collections & cloned repo directories
+backend/qdrant_data/
+backend/cloned_repos/
+qdrant_data/
+cloned_repos/
+/github_ai_engineer.db
