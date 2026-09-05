@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { 
   GitBranch, Code, FileCode, CheckCircle, Database, HelpCircle,
-  Hash, BookOpen, AlertCircle, Compass
+  Hash, BookOpen, AlertCircle, Compass, RefreshCw
 } from "lucide-react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";

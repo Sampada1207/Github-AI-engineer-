@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { fetchApi } from "@/lib/api";
 import { AppLayout } from "@/components/shared/app-layout";
@@ -35,7 +35,7 @@ interface Project {
   description: string;
 }
 
-export default function DashboardPage() {
+function DashboardContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get("project");
   
@@ -325,5 +325,21 @@ export default function DashboardPage() {
         )}
       </div>
     </AppLayout>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppLayout>
+          <div className="flex justify-center items-center py-24">
+            <RefreshCw className="h-8 w-8 text-purple-500 animate-spin" />
+          </div>
+        </AppLayout>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
   );
 }

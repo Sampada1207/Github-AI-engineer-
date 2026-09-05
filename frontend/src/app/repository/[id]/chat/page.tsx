@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { fetchApi } from "@/lib/api";
 import { AppLayout } from "@/components/shared/app-layout";
@@ -44,6 +44,15 @@ export default function RepoChatPage() {
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const loadMessages = useCallback(async (chatId: string) => {
+    try {
+      const msgList = await fetchApi(`/chats/${chatId}/messages`);
+      setMessages(msgList);
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
   useEffect(() => {
     const loadChats = async () => {
       try {
@@ -78,16 +87,7 @@ export default function RepoChatPage() {
       }
     };
     loadChats();
-  }, [repoId]);
-
-  const loadMessages = async (chatId: string) => {
-    try {
-      const msgList = await fetchApi(`/chats/${chatId}/messages`);
-      setMessages(msgList);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  }, [repoId, loadMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
