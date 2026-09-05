@@ -1,3 +1,6 @@
+import os
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -5,7 +8,8 @@ from app.repositories import crud
 from app.schemas.schemas import ProjectCreate, ProjectResponse
 from app.routes.deps import get_current_user
 from app.models.models import User
-from typing import List
+from app.config import settings
+from app.services.git_service import git_service
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -38,13 +42,8 @@ def delete_project(project_id: str, db: Session = Depends(get_db), current_user:
     if project.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this project")
     
-    # Delete cloned folders for any repos linked to this project
-    from app.config import settings
     for repo in project.repositories:
-        repo_dir = os.path.join(settings.CLONED_REPOS_DIR, str(repo.id))
-        from app.services.git_service import git_service
-        git_service.clean_repo(repo_dir)
-        
+        git_service.clean_repo(git_service.repo_storage_path(str(repo.id)))
+
     crud.delete_project(db, project_id)
     return
-import os

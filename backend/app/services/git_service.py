@@ -1,9 +1,36 @@
 import os
+import re
 import shutil
-import git
+from urllib.parse import urlparse
 from typing import List, Dict, Any
+import git
+from app.config import settings
 
 class GitService:
+    def repo_storage_path(self, repo_id: str) -> str:
+        """Canonical clone directory for a repository id."""
+        safe_id = str(repo_id).replace("..", "").replace("/", "").replace("\\", "")
+        return os.path.join(settings.CLONED_REPOS_DIR, safe_id)
+
+    def validate_git_url(self, repo_url: str) -> str:
+        """Reject local paths, file URLs, and injection-prone git URLs."""
+        if not repo_url or not isinstance(repo_url, str):
+            raise ValueError("Repository URL is required")
+        url = repo_url.strip()
+        if any(ch in url for ch in ["\n", "\r", ";", "|", "`", "$(", "&"]):
+            raise ValueError("Repository URL contains invalid characters")
+        ssh_match = re.match(r"^git@[\w.-]+:[\w./-]+(?:\.git)?$", url)
+        if ssh_match:
+            return url
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https", "git"):
+            raise ValueError("Only HTTP(S) and git remote URLs are supported")
+        if not parsed.netloc:
+            raise ValueError("Repository URL must include a host")
+        if parsed.username or parsed.password:
+            raise ValueError("Embedded credentials in repository URLs are not allowed")
+        return url
+
     def clone_repo(self, repo_url: str, dest_dir: str, branch: str = "main") -> str:
         """
         Clones a git repository to the target destination folder.
@@ -13,6 +40,7 @@ class GitService:
             self.clean_repo(dest_dir)
             
         os.makedirs(dest_dir, exist_ok=True)
+        repo_url = self.validate_git_url(repo_url)
         
         try:
             # Basic git clone. We can support cloning with depth=1 for speed.
@@ -56,6 +84,8 @@ class GitService:
         }
         
         files_data = []
+        max_files = getattr(settings, "MAX_FILES_PER_REPO", 5000)
+        max_size = getattr(settings, "MAX_FILE_SIZE_BYTES", 2 * 1024 * 1024)
         
         for root, dirs, files in os.walk(dest_dir):
             # Prune ignored directories in-place
@@ -74,9 +104,11 @@ class GitService:
                 
                 try:
                     size = os.path.getsize(full_path)
-                    # Skip extremely large files (>2MB) to prevent OOM
-                    if size > 2 * 1024 * 1024:
+                    if size > max_size:
                         continue
+                    if len(files_data) >= max_files:
+                        print(f"Reached MAX_FILES_PER_REPO={max_files}; remaining files skipped.")
+                        return files_data
                         
                     with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()

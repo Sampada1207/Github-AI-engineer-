@@ -23,7 +23,7 @@ interface Repository {
   branch: string;
   status: string;
   error_message?: string;
-  language_stats?: Record<str, number>;
+  language_stats?: Record<string, number>;
   health_score: number;
   last_analyzed_at?: string;
   created_at: string;

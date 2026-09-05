@@ -14,6 +14,7 @@ from app.services.parser_service import parser_service
 from app.services.embedding_service import embedding_service
 from app.services.vector_db import qdrant_service
 from app.services.analysis_service import analysis_service
+from app.config import settings
 from typing import List, Dict, Any, Optional
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
@@ -29,7 +30,7 @@ def process_repository_pipeline(repo_id: str):
         db.close()
         return
 
-    repo_dir = os.path.join(os.getcwd(), "backend", "cloned_repos", str(repo.id))
+    repo_dir = os.path.join(settings.CLONED_REPOS_DIR, str(repo.id))
     
     try:
         # Step 1: Clone Repository
@@ -322,7 +323,7 @@ def analyze_repository_synchronously(
     repo = crud.create_repo(db, repo_in)
     
     # 3. Clone Repository
-    repo_dir = os.path.join(os.getcwd(), "backend", "cloned_repos", str(repo.id))
+    repo_dir = os.path.join(settings.CLONED_REPOS_DIR, str(repo.id))
     try:
         crud.update_repo_status(db, repo.id, "cloning")
         git_service.clone_repo(repo.url, repo_dir, repo.branch)

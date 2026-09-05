@@ -109,7 +109,7 @@ export default function RepositoryDetailsPage() {
       lines.forEach((line, idx) => {
         const stripped = line.trim();
         if (stripped.startsWith("class ")) {
-          classes.append({
+          classes.push({
             name: stripped.split("(")[0].replace("class ", "").replace(":", "").trim(),
             start_line: idx + 1,
             end_line: idx + 5,
@@ -117,7 +117,7 @@ export default function RepositoryDetailsPage() {
           });
         }
         if (stripped.startsWith("def ") || stripped.startsWith("async def ")) {
-          funcs.append({
+          funcs.push({
             name: stripped.split("(")[0].replace("def ", "").replace("async def ", "").trim(),
             start_line: idx + 1,
             end_line: idx + 2,
@@ -132,13 +132,13 @@ export default function RepositoryDetailsPage() {
         if (stripped.startsWith("class ") || stripped.includes("export class ")) {
           const match = stripped.match(/class\s+(\w+)/);
           if (match) {
-            classes.append({ name: match[1], start_line: idx + 1, end_line: idx + 5, content: line });
+            classes.push({ name: match[1], start_line: idx + 1, end_line: idx + 5, content: line });
           }
         }
         if (stripped.startsWith("function ") || stripped.includes("func ") || stripped.match(/const\s+\w+\s*=\s*\(.*?\)\s*=>/)) {
           const match = stripped.match(/(?:function|func)\s+(\w+)/) || stripped.match(/const\s+(\w+)\s*=/);
           if (match) {
-            funcs.append({ name: match[1], start_line: idx + 1, end_line: idx + 2, content: line });
+            funcs.push({ name: match[1], start_line: idx + 1, end_line: idx + 2, content: line });
           }
         }
       });

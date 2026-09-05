@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useParams } from "next/params";
+import { useParams } from "next/navigation";
 import { fetchApi } from "@/lib/api";
 import { AppLayout } from "@/components/shared/app-layout";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";

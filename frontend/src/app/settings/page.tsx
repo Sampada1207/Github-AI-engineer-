@@ -149,4 +149,4 @@ export default function SettingsPage() {
     </AppLayout>
   );
 }
-export { Settings as SettingsIcon } from "lucide-react";
+

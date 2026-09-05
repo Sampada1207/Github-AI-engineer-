@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine, Base
 from app.routes import auth_router, projects_router, repos_router, chat_router, ai_router
+import app.models.models  # noqa: F401 — register ORM models
 
-# Initialize all database tables on startup
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -14,16 +14,17 @@ app = FastAPI(
     debug=settings.DEBUG
 )
 
-# CORS middleware configuration
+cors_origins = settings.cors_origin_list()
+allow_credentials = "*" not in cors_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development ease; configure narrow in production
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register routers
 app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(projects_router, prefix=settings.API_V1_STR)
 app.include_router(repos_router, prefix=settings.API_V1_STR)
