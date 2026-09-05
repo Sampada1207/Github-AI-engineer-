@@ -36,7 +36,8 @@ class DiagramService:
             
             for imp in struct.get("imports", []):
                 # Check if this import matches any of our file basenames (simple heuristic)
-                imp_base = imp.split(".")[-1] + os.path.splitext(file["name"])[1]
+                file_ext = os.path.splitext(file.get("name", file.get("path", "")))[1]
+                imp_base = imp.split(".")[-1] + file_ext
                 imp_base_no_ext = imp.split("/")[-1].split(".")[-1]
                 
                 matched = False
@@ -70,7 +71,7 @@ class DiagramService:
         folders = set()
         for file in files:
             path = file["path"]
-            parts = path.split(os.sep)
+            parts = path.split("/")
             if len(parts) > 1:
                 # Add connections between directory parts
                 for idx in range(len(parts) - 1):

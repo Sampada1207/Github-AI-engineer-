@@ -48,7 +48,7 @@ class CodeAnalysisService:
                         in_func = True
                         func_name = stripped.split("(")[0].replace("def ", "").replace("async def ", "").strip()
                         func_start = line_num
-                    elif in_func and line.startswith(("", " ")) and not line.startswith("    ") and stripped != "":
+                    elif in_func and not line.startswith(("    ", "\t")) and stripped != "":
                         # Function ended (dedentation)
                         self._check_func_length(path, func_name, func_start, line_num - 1, code_smells)
                         in_func = False

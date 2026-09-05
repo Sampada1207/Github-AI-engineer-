@@ -174,7 +174,7 @@ export default function RepositoryDocsPage() {
                 </CardContent>
               </Card>
             ) : (
-              <Accordion type="single" collapsible className="space-y-4">
+              <Accordion openMultiple={false} className="space-y-4">
                 {docs.map((doc) => (
                   <AccordionItem 
                     key={doc.id} 
