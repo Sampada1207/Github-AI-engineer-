@@ -10,11 +10,26 @@ from app.agents.tools import (
     search_codebase,
     read_file_content,
     list_code_symbols,
-    get_repository_overview
+    get_repository_overview,
+    get_symbol_relationships,
+    find_symbol_usages,
+    get_file_dependencies,
+    get_impact_analysis,
+    review_code
 )
 
-# List of tools available
-tools_list = [search_codebase, read_file_content, list_code_symbols, get_repository_overview]
+# Complete list of hybrid RAG and knowledge graph tools
+tools_list = [
+    search_codebase,
+    read_file_content,
+    list_code_symbols,
+    get_repository_overview,
+    get_symbol_relationships,
+    find_symbol_usages,
+    get_file_dependencies,
+    get_impact_analysis,
+    review_code
+]
 tools_map = {tool.name: tool for tool in tools_list}
 
 
@@ -27,16 +42,23 @@ def call_model(state: AgentState, config: RunnableConfig):
     system_prompt = (
         "You are an expert AI software engineer and code intelligence assistant analyzing a software repository.\n"
         f"The active repository context ID is '{repository_id}'.\n\n"
-        "You have access to tools that understand code structure, symbols, hierarchy, and relationships:\n"
+        "You have access to a Hybrid Retrieval & Knowledge Graph toolset:\n"
         "- `get_repository_overview`: Retrieve high-level architecture, primary languages, key files, modules, and dependencies.\n"
-        "- `search_codebase`: Find semantically and structurally relevant classes, functions, methods, and modules.\n"
+        "- `search_codebase`: Hybrid semantic + graph search for relevant code snippets, containing classes, and function relationships.\n"
+        "- `get_symbol_relationships`: Inspect symbol hierarchy, containing class, base classes, functions called, and callers.\n"
+        "- `find_symbol_usages`: Locate all callers and references to a specific function or class across the repo.\n"
+        "- `get_file_dependencies`: Trace imported files, dependencies, and all other files that import a given file.\n"
+        "- `get_impact_analysis`: Calculate blast radius and potentially affected callers/files if a symbol or file is changed.\n"
+        "- `review_code`: Perform repository-aware AI code review auditing bugs, security, performance, maintainability, and blast radius.\n"
         "- `read_file_content`: Inspect full file implementations, imports, and definitions.\n"
         "- `list_code_symbols`: View all classes, methods, and top-level functions in the project.\n\n"
         "Guidelines:\n"
-        "1. For broad repository questions ('how does this repo work?', 'overview'), call `get_repository_overview`.\n"
-        "2. When explaining code, explain the structure, containing classes, and function relationships.\n"
-        "3. Always cite file paths, symbol names, and line ranges in markdown format.\n"
-        "4. Be accurate, concise, and structured."
+        "1. For architecture / overview queries ('how does this repo work?', 'overview'), use `get_repository_overview`.\n"
+        "2. For call hierarchies and impact ('what calls X?', 'if I change Y?'), use `find_symbol_usages` or `get_impact_analysis`.\n"
+        "3. For code reviews ('review this file', 'audit function X'), use `review_code`.\n"
+        "4. When explaining code, explain the structure, containing classes, and function relationships.\n"
+        "5. Always cite file paths, symbol names, and line ranges in markdown format.\n"
+        "6. Be accurate, concise, and structured."
     )
 
     all_messages = [SystemMessage(content=system_prompt)] + list(messages)
@@ -52,15 +74,16 @@ def call_model(state: AgentState, config: RunnableConfig):
         except Exception as e:
             print(f"Error in LLM invocation: {e}")
 
-    # Fallback: Keyword Q&A matching if no LLM key is configured
+    # Fallback: Hybrid Q&A matching if no LLM key is configured
     user_query = messages[-1].content if messages else ""
     return _generate_mock_agent_response(user_query, repository_id)
 
 
 def _generate_mock_agent_response(query: str, repository_id: str) -> Dict[str, Any]:
-    """Fallback agent generator that queries local Qdrant vectors and builds a structured response."""
-    # Check if this is an overview query
+    """Fallback agent generator using hybrid retrieval and graph reasoning tools."""
     query_lower = query.lower()
+
+    # 1. Overview query
     if any(k in query_lower for k in ["overview", "architecture", "structure", "summary", "explain this repository", "list its files"]):
         try:
             overview_text = get_repository_overview.invoke({"repository_id": repository_id})
@@ -70,47 +93,45 @@ def _generate_mock_agent_response(query: str, repository_id: str) -> Dict[str, A
         except Exception:
             pass
 
-    results = qdrant_service_search_local(query, repository_id)
+    # 2. Impact analysis query
+    if any(k in query_lower for k in ["break", "impact", "affect", "change this"]):
+        words = [w for w in query.replace("?", "").split() if len(w) > 2 and w.lower() not in ("what", "could", "break", "if", "change", "this", "class", "function", "file")]
+        if words:
+            target = words[-1]
+            try:
+                impact_text = get_impact_analysis.invoke({"target": target, "repository_id": repository_id})
+                msg = AIMessage(content=f"{impact_text}\n\n*(Note: Configure OPENAI_API_KEY for dynamic conversational AI answers)*")
+                return {"messages": [msg], "citations": []}
+            except Exception:
+                pass
 
-    if results:
-        code_snippets = []
-        citations = []
-        for hit in results:
-            sym_desc = f" [{hit.get('symbol_type', 'code').upper()}: {hit.get('symbol_name')}]" if hit.get('symbol_name') else ""
-            parent_desc = f" (in class {hit['parent_symbol']})" if hit.get('parent_symbol') else ""
+    # 3. Usage / Caller query
+    if any(k in query_lower for k in ["what calls", "who calls", "where is", "used", "usages"]):
+        words = [w for w in query.replace("?", "").split() if len(w) > 2 and w.lower() not in ("what", "who", "calls", "where", "is", "used", "this", "function", "class")]
+        if words:
+            target = words[-1]
+            try:
+                usage_text = find_symbol_usages.invoke({"symbol_name": target, "repository_id": repository_id})
+                msg = AIMessage(content=f"{usage_text}\n\n*(Note: Configure OPENAI_API_KEY for dynamic conversational AI answers)*")
+                return {"messages": [msg], "citations": []}
+            except Exception:
+                pass
 
-            code_snippets.append(
-                f"### File: `{hit['file_path']}`{sym_desc}{parent_desc} (Lines {hit['start_line']}-{hit['end_line']})\n"
-                f"```\n{hit['content'][:500]}...\n```"
-            )
-            citations.append({
-                "file_path": hit["file_path"],
-                "start_line": hit["start_line"],
-                "end_line": hit["end_line"],
-                "symbol_name": hit.get("symbol_name"),
-                "symbol_type": hit.get("symbol_type")
-            })
+    # 4. Hybrid Search Context
+    from app.services.hybrid_rag import hybrid_rag_service
+    hybrid_res = hybrid_rag_service.retrieve_hybrid_context(query, repository_id, limit=3)
 
-        snippets_text = "\n\n".join(code_snippets)
+    if hybrid_res.get("context") and hybrid_res["context"] != "No matching semantic or structural code found.":
         response_text = (
-            f"Here are the code segments related to your query '{query}' parsed from local index:\n\n"
-            f"{snippets_text}\n\n"
+            f"Here is the hybrid code intelligence and relationship context for '{query}':\n\n"
+            f"{hybrid_res['context']}\n\n"
             "*(Note: Provide an OPENAI_API_KEY in the environment settings to enable fully interactive conversation and coding explanations)*"
         )
         msg = AIMessage(content=response_text)
-        return {"messages": [msg], "citations": citations}
+        return {"messages": [msg], "citations": hybrid_res.get("citations", [])}
 
-    msg = AIMessage(content="I searched the database but found no matching code snippets for your query. Please check if files have been fully cloned and indexed.")
+    msg = AIMessage(content="I searched the vector database and knowledge graph but found no matching code snippets or relationships for your query. Please check if the repository has completed ingestion.")
     return {"messages": [msg], "citations": []}
-
-
-def qdrant_service_search_local(query: str, repository_id: str) -> List[Dict[str, Any]]:
-    """Helper to query Qdrant inside mock agent without throwing import errors."""
-    try:
-        from app.services.vector_db import qdrant_service
-        return qdrant_service.search_similar_chunks(query, repository_id, limit=3)
-    except Exception:
-        return []
 
 
 def call_tools(state: AgentState):

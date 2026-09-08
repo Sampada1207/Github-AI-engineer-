@@ -5,7 +5,17 @@ from app.services.parser_service import parser_service
 from app.services.embedding_service import embedding_service
 from app.services.vector_db import qdrant_service
 from app.services.analysis_service import analysis_service
-from app.agents.tools import search_codebase, list_code_symbols, get_repository_overview
+from app.services.knowledge_graph import knowledge_graph_service, GraphNode, GraphEdge
+from app.services.hybrid_rag import hybrid_rag_service
+from app.agents.tools import (
+    search_codebase,
+    list_code_symbols,
+    get_repository_overview,
+    get_symbol_relationships,
+    find_symbol_usages,
+    get_file_dependencies,
+    get_impact_analysis
+)
 
 
 def test_security_helpers():
@@ -210,3 +220,212 @@ def test_repository_summary_generation():
     assert any(kf["path"] == "app/main.py" for kf in summary["key_files"])
     assert any(c["name"] == "UserService" for c in summary["classes"])
     assert "## Repository Architecture Overview" in summary["summary_text"]
+
+
+# ================= PHASE 3: KNOWLEDGE GRAPH & HYBRID RAG TESTS =================
+
+def test_knowledge_graph_construction_and_isolation():
+    repo_id = "repo-kg-test-101"
+    files_data = [
+        {
+            "path": "services/auth.py",
+            "name": "auth.py",
+            "language": "Python",
+            "size": 600,
+            "content": (
+                "class BaseAuth:\n"
+                "    pass\n\n"
+                "class AuthService(BaseAuth):\n"
+                "    def authenticate(self, token):\n"
+                "        return validate_token(token)\n\n"
+                "def validate_token(token):\n"
+                "    return True\n"
+            )
+        },
+        {
+            "path": "routes/login.py",
+            "name": "login.py",
+            "language": "Python",
+            "size": 400,
+            "content": (
+                "from services.auth import AuthService\n\n"
+                "def login_route():\n"
+                "    auth = AuthService()\n"
+                "    return auth.authenticate('sample')\n"
+            )
+        }
+    ]
+
+    # Build Graph
+    kg = knowledge_graph_service.build_graph_from_repository(repo_id, files_data)
+    assert len(kg.nodes) >= 6
+    assert len(kg.out_edges) > 0
+
+    # Test Repository Isolation
+    other_kg = knowledge_graph_service.get_graph("unrelated-repo-999")
+    assert len(other_kg.nodes) == 0
+
+
+def test_knowledge_graph_relationships_and_usages():
+    repo_id = "repo-kg-test-101"
+    
+    # 1. Symbol relationships for AuthService
+    auth_rel = knowledge_graph_service.get_symbol_relationships("AuthService", repo_id)
+    assert auth_rel["found"] is True
+    match = auth_rel["matches"][0]
+    assert match["name"] == "AuthService"
+    assert "BaseAuth" in match["extends"]
+    assert any("authenticate" in c for c in match["contains"])
+
+    # 2. Usages of authenticate function
+    usages = knowledge_graph_service.find_symbol_usages("validate_token", repo_id)
+    assert usages["total_usages"] >= 1
+    assert any(u["caller_name"] == "authenticate" for u in usages["usages"])
+
+
+def test_knowledge_graph_file_dependencies_and_impact():
+    repo_id = "repo-kg-test-101"
+
+    # 1. File dependencies for routes/login.py
+    login_deps = knowledge_graph_service.get_file_dependencies("routes/login.py", repo_id)
+    assert login_deps["found"] is True
+    assert any("services/auth.py" in imp for imp in login_deps["internal_imports"])
+
+    # 2. Impact analysis if validate_token or AuthService changes
+    impact = knowledge_graph_service.get_impact_analysis("validate_token", repo_id)
+    assert impact["affected_symbols_count"] >= 1
+    assert any("authenticate" in sym for sym in impact["affected_symbols"])
+
+
+def test_hybrid_rag_retrieval_and_context_building():
+    repo_id = "repo-kg-test-101"
+
+    # Index chunks in Qdrant for this repo so vector search has targets
+    chunks = [
+        {
+            "chunk_id": "auth_py_class_AuthService_1_10",
+            "file_path": "services/auth.py",
+            "language": "Python",
+            "symbol_name": "AuthService",
+            "symbol_type": "class",
+            "parent_symbol": None,
+            "content": "class AuthService(BaseAuth):\n    def authenticate(self, token):\n        return validate_token(token)",
+            "start_line": 1,
+            "end_line": 10,
+            "relationships": {"bases": ["BaseAuth"], "methods": ["authenticate"]}
+        }
+    ]
+    embeddings = [embedding_service.get_embedding(chunks[0]["content"])]
+    qdrant_service.index_chunks(chunks, embeddings, repo_id)
+
+    # Perform Hybrid Retrieval
+    hybrid_result = hybrid_rag_service.retrieve_hybrid_context("How does authenticate work with AuthService?", repo_id, limit=3)
+    assert "context" in hybrid_result
+    assert len(hybrid_result["citations"]) >= 1
+    assert "Relevant Code Snippets" in hybrid_result["context"]
+    assert "Structural Code Knowledge Graph" in hybrid_result["context"]
+
+
+def test_agent_graph_tools_execution():
+    repo_id = "repo-kg-test-101"
+
+    # 1. get_symbol_relationships tool
+    rel_out = get_symbol_relationships.invoke({"symbol_name": "AuthService", "repository_id": repo_id})
+    assert "Knowledge Graph Relationships for `AuthService`" in rel_out
+    assert "BaseAuth" in rel_out
+
+    # 2. find_symbol_usages tool
+    usage_out = find_symbol_usages.invoke({"symbol_name": "validate_token", "repository_id": repo_id})
+    assert "Usages of `validate_token`" in usage_out
+
+    # 3. get_file_dependencies tool
+    dep_out = get_file_dependencies.invoke({"file_path": "routes/login.py", "repository_id": repo_id})
+    assert "Dependency Graph for `routes/login.py`" in dep_out
+    assert "services/auth.py" in dep_out
+
+    # 4. get_impact_analysis tool
+    impact_out = get_impact_analysis.invoke({"target": "validate_token", "repository_id": repo_id})
+    assert "Impact Analysis for `validate_token`" in impact_out
+    assert "authenticate" in impact_out
+
+    # 5. search_codebase tool with hybrid context
+    search_out = search_codebase.invoke({"query": "AuthService authenticate", "repository_id": repo_id})
+    assert "Relevant Code Snippets" in search_out or "AuthService" in search_out
+
+
+# ================= PHASE 4: AI CODE REVIEW & IMPACT ANALYSIS TESTS =================
+
+def test_ai_code_review_service_and_findings_structure():
+    from app.services.review_service import ai_code_review_service
+    repo_id = "repo-kg-test-101"
+
+    code_with_bugs = (
+        "import os\n"
+        "SECRET_KEY = 'super_secret_password_12345'\n"
+        "def unsafe_exec(user_input):\n"
+        "    eval(user_input)\n"
+        "def bad_error_handling():\n"
+        "    try:\n"
+        "        do_something()\n"
+        "    except:\n"
+        "        pass\n"
+    )
+
+    review_res = ai_code_review_service.review_codebase(
+        repository_id=repo_id,
+        file_path="app/vulnerable.py",
+        code_snippet=code_with_bugs
+    )
+
+    assert review_res["repository_id"] == repo_id
+    assert "overall_summary" in review_res
+    assert "impact_analysis" in review_res
+    
+    findings = review_res["findings"]
+    assert len(findings) >= 3
+
+    # Check finding structures
+    categories = [f["category"] for f in findings]
+    severities = [f["severity"] for f in findings]
+
+    assert "Security" in categories
+    assert "Error Handling" in categories
+    assert "Critical" in severities or "High" in severities
+
+    for f in findings:
+        assert "severity" in f
+        assert "category" in f
+        assert "file" in f
+        assert "explanation" in f
+        assert "suggested_fix" in f
+
+
+def test_enhanced_impact_analysis_fields():
+    repo_id = "repo-kg-test-101"
+    impact = knowledge_graph_service.get_impact_analysis("validate_token", repo_id)
+
+    assert impact["target"] == "validate_token"
+    assert "impact_risk" in impact
+    assert "blast_radius_score" in impact
+    assert isinstance(impact["blast_radius_score"], (int, float))
+    assert "directly_affected_symbols" in impact
+    assert "dependent_files" in impact
+    assert "callers" in impact
+    assert "dependencies" in impact
+    assert "limitations_notice" in impact
+    assert "Static graph traversal analysis" in impact["limitations_notice"]
+
+
+def test_review_code_agent_tool():
+    from app.agents.tools import review_code
+    repo_id = "repo-kg-test-101"
+
+    tool_out = review_code.invoke({
+        "repository_id": repo_id,
+        "file_path": "services/auth.py",
+        "symbol_name": "AuthService"
+    })
+
+    assert "AI Code Review Summary" in tool_out
+    assert "Detailed Findings" in tool_out
+

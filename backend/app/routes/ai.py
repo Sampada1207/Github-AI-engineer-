@@ -5,7 +5,8 @@ from app.repositories import crud
 from app.schemas.schemas import (
     GeneratedDocCreate, GeneratedDocResponse,
     GeneratedDiagramCreate, GeneratedDiagramResponse,
-    CodeReviewCreate, CodeReviewResponse
+    CodeReviewCreate, CodeReviewResponse,
+    AICodeReviewRequest, AICodeReviewResponse
 )
 from app.routes.deps import get_current_user
 from app.models.models import User
@@ -13,6 +14,7 @@ from app.services.doc_service import doc_service
 from app.services.diagram_service import diagram_service
 from app.services.parser_service import parser_service
 from app.services.analysis_service import analysis_service
+from app.services.review_service import ai_code_review_service
 from typing import List
 
 router = APIRouter(prefix="/repositories/{repo_id}", tags=["ai_generators"])
@@ -71,7 +73,7 @@ def generate_repo_diagram(repo_id: str, diag_in: GeneratedDiagramCreate, db: Ses
 @router.get("/diagrams", response_model=List[GeneratedDiagramResponse])
 def get_repo_diagrams(repo_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Fetches previously generated diagrams for the repository."""
-    repo = crud.get_repo_by_id(db, repo_id)
+    repo = crud.get_repo_id(db, repo_id) if hasattr(crud, 'get_repo_id') else crud.get_repo_by_id(db, repo_id)
     if not repo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
     if repo.project.user_id != current_user.id:
@@ -119,3 +121,34 @@ def get_repo_reviews(repo_id: str, db: Session = Depends(get_db), current_user: 
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
         
     return crud.get_reviews_by_repo(db, repo_id)
+
+
+@router.post("/ai-review", response_model=AICodeReviewResponse)
+def perform_ai_code_review(
+    repo_id: str,
+    review_req: AICodeReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Executes a repository-aware AI Code Review for a specific file, symbol, or code snippet.
+    Includes Knowledge Graph blast-radius impact analysis and structured findings.
+    """
+    repo = crud.get_repo_by_id(db, repo_id)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
+    if repo.project.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this repository")
+
+    db_files = crud.get_files_by_repo(db, repo_id)
+    files_data = [{"path": f.path, "name": f.name, "language": f.language, "size": f.size, "content": f.content} for f in db_files]
+
+    result = ai_code_review_service.review_codebase(
+        repository_id=repo_id,
+        file_path=review_req.file_path,
+        symbol_name=review_req.symbol_name,
+        code_snippet=review_req.code_snippet,
+        files_data=files_data
+    )
+    return result
+

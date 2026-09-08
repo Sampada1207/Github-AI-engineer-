@@ -110,7 +110,19 @@ def process_repository_pipeline(repo_id: str):
                         }
                     )
 
-        # Step 7: Run quality calculations, repository summary, and language composition
+        # Step 7: Build and Persist Code Knowledge Graph
+        from app.services.knowledge_graph import knowledge_graph_service
+        import json
+        kg = knowledge_graph_service.build_graph_from_repository(repo_id, files_data, parsed_structures)
+        crud.create_documentation(
+            db=db,
+            repository_id=repo_id,
+            doc_type="knowledge_graph",
+            file_path=None,
+            content=json.dumps(kg.to_dict())
+        )
+
+        # Step 8: Run quality calculations, repository summary, and language composition
         lang_stats = git_service.calculate_language_stats(files_data)
         quality_results = analysis_service.analyze_codebase(files_data)
         repo_summary = analysis_service.generate_repository_summary(files_data, parsed_structures)

@@ -182,3 +182,26 @@ class CodeReviewResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# ================= AI CODE REVIEW & IMPACT SCHEMAS =================
+class AICodeReviewRequest(BaseModel):
+    file_path: Optional[str] = None
+    symbol_name: Optional[str] = None
+    code_snippet: Optional[str] = None
+
+class AICodeReviewFinding(BaseModel):
+    severity: str  # "Critical", "High", "Medium", "Low", "Info"
+    category: str  # "Bugs", "Security", "Performance", "Maintainability", "Error Handling", "Bad Practices"
+    file: str
+    line: Optional[Any] = None  # line number or symbol range string
+    explanation: str
+    suggested_fix: Optional[str] = None
+
+class AICodeReviewResponse(BaseModel):
+    repository_id: str
+    target: str
+    overall_summary: str
+    findings: List[AICodeReviewFinding]
+    impact_analysis: Dict[str, Any]
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+

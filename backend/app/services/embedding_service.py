@@ -10,6 +10,8 @@ class EmbeddingService:
         self.use_openai = bool(settings.OPENAI_API_KEY) and not self.is_testing
         self.local_model = None
         
+        self._local_model_loaded = False
+        
         if self.use_openai:
             try:
                 from openai import OpenAI
@@ -17,15 +19,18 @@ class EmbeddingService:
             except Exception as e:
                 print(f"Failed to initialize OpenAI client: {e}. Falling back to local/mock embeddings.")
                 self.use_openai = False
-                
-        if not self.use_openai and not self.is_testing:
-            # Attempt to import sentence-transformers for local BGE Large
+
+    def _get_local_model(self):
+        if not self._local_model_loaded and not self.use_openai and not self.is_testing:
+            self._local_model_loaded = True
             try:
                 from sentence_transformers import SentenceTransformer
                 print(f"Loading local embedding model: {settings.EMBEDDING_MODEL}")
                 self.local_model = SentenceTransformer(settings.EMBEDDING_MODEL)
             except Exception as e:
                 print(f"SentenceTransformers load failed: {e}. Using deterministic mock embedding generator.")
+                self.local_model = None
+        return self.local_model
 
     def get_embedding(self, text: str) -> List[float]:
         """Generates embedding for a single text input."""
@@ -47,9 +52,10 @@ class EmbeddingService:
             except Exception as e:
                 print(f"OpenAI embedding generation failed: {e}. Falling back...")
                 
-        if self.local_model:
+        local_model = self._get_local_model()
+        if local_model:
             try:
-                embeddings = self.local_model.encode(texts, normalize_embeddings=True)
+                embeddings = local_model.encode(texts, normalize_embeddings=True)
                 return embeddings.tolist()
             except Exception as e:
                 print(f"Local model encoding failed: {e}. Falling back...")

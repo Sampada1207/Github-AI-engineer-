@@ -10,7 +10,11 @@ from app.services.embedding_service import embedding_service
 class QdrantService:
     def __init__(self):
         if settings.QDRANT_PATH:
-            self.client = QdrantClient(path=settings.QDRANT_PATH)
+            try:
+                self.client = QdrantClient(path=settings.QDRANT_PATH)
+            except Exception as e:
+                print(f"Qdrant local storage locked ({e}). Falling back to in-memory Qdrant.")
+                self.client = QdrantClient(":memory:")
         elif settings.QDRANT_HOST:
             self.client = QdrantClient(
                 host=settings.QDRANT_HOST,

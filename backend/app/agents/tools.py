@@ -1,5 +1,8 @@
+import json
 from langchain_core.tools import tool
 from app.services.vector_db import qdrant_service
+from app.services.knowledge_graph import knowledge_graph_service
+from app.services.hybrid_rag import hybrid_rag_service
 from app.database import SessionLocal
 from app.models.models import RepositoryFile, CodeChunk, GeneratedDocumentation
 from typing import List, Dict, Any, Optional
@@ -8,43 +11,124 @@ from typing import List, Dict, Any, Optional
 @tool
 def search_codebase(query: str, repository_id: str) -> str:
     """
-    Search the repository codebase for code snippets, symbols, and logical structures using semantic vector search.
-    Returns matched functions, classes, methods, and modules with structural relationship metadata.
+    Search the repository codebase using hybrid retrieval (semantic vector search + code knowledge graph).
+    Returns relevant code snippets, containing classes, function call chains, and file dependencies.
     """
-    results = qdrant_service.search_similar_chunks(query, repository_id, limit=5)
-    if not results:
-        return "No matching code snippets or symbols found in the vector database for this repository."
+    result = hybrid_rag_service.retrieve_hybrid_context(query, repository_id, limit=5)
+    return result.get("context", "No matching code or relationships found in the repository.")
 
-    formatted = []
-    for idx, hit in enumerate(results):
-        sym_type = hit.get("symbol_type") or hit.get("chunk_type", "module")
-        sym_name = hit.get("symbol_name") or ""
-        parent = hit.get("parent_symbol")
-        rel = hit.get("relationships") or {}
 
-        header_parts = [f"Result {idx + 1} (Score: {hit['score']:.2f})"]
-        if sym_name:
-            sym_desc = f"Symbol: [{sym_type.upper()}] {sym_name}"
-            if parent:
-                sym_desc += f" (in class {parent})"
-            header_parts.append(sym_desc)
+@tool
+def get_symbol_relationships(symbol_name: str, repository_id: str) -> str:
+    """
+    Retrieve direct relationships for a symbol (class, method, or function) in the knowledge graph:
+    - Containing class or module
+    - Base classes / interfaces extended
+    - Methods / symbols contained
+    - Functions / methods called by this symbol
+    - Callers that invoke this symbol
+    """
+    rel = knowledge_graph_service.get_symbol_relationships(symbol_name, repository_id)
+    if not rel.get("found"):
+        return f"Symbol '{symbol_name}' was not found in the repository knowledge graph."
 
-        header_parts.append(f"File: {hit['file_path']} (Lines {hit['start_line']}-{hit['end_line']})")
+    output = [f"## Knowledge Graph Relationships for `{symbol_name}`\n"]
+    for idx, match in enumerate(rel.get("matches", [])):
+        output.append(f"### Match {idx + 1}: **{match['name']}** ({match['type']})")
+        output.append(f"- **File**: `{match['file_path']}` (Lines {match['lines']})")
+        if match.get("parent_container"):
+            output.append(f"- **Contained in**: `{match['parent_container']}`")
+        if match.get("extends"):
+            output.append(f"- **Extends / Bases**: {', '.join(match['extends'])}")
+        if match.get("calls"):
+            output.append(f"- **Calls**: {', '.join(match['calls'])}")
+        if match.get("called_by"):
+            output.append(f"- **Called By**: {', '.join(match['called_by'])}")
+        if match.get("contains"):
+            output.append(f"- **Contains Members**: {', '.join(match['contains'])}")
+        output.append("")
 
-        rel_notes = []
-        if rel.get("calls"):
-            rel_notes.append(f"Calls: {', '.join(rel['calls'][:5])}")
-        if rel.get("bases"):
-            rel_notes.append(f"Extends: {', '.join(rel['bases'])}")
-        if rel.get("methods"):
-            rel_notes.append(f"Methods: {', '.join(rel['methods'][:6])}")
+    return "\n".join(output)
 
-        if rel_notes:
-            header_parts.append("Relationships: " + " | ".join(rel_notes))
 
-        formatted.append("\n".join(header_parts) + f"\nCode:\n```\n{hit['content']}\n```\n")
+@tool
+def find_symbol_usages(symbol_name: str, repository_id: str) -> str:
+    """
+    Locate all callers, references, and usages of a function, class, or method across the entire repository.
+    Use this to see where a function is called or where a class is instantiated.
+    """
+    usages_data = knowledge_graph_service.find_symbol_usages(symbol_name, repository_id)
+    usages = usages_data.get("usages", [])
+    if not usages:
+        return f"No direct usages of '{symbol_name}' were detected in the codebase."
 
-    return "\n---\n".join(formatted)
+    output = [f"## Usages of `{symbol_name}` ({len(usages)} occurrences found)\n"]
+    for idx, u in enumerate(usages):
+        output.append(
+            f"{idx + 1}. **{u['caller_name']}** ({u['caller_type']}) via `{u['usage_type']}` "
+            f"in `{u['file_path']}` (Lines {u['start_line']}-{u['end_line']})"
+        )
+
+    return "\n".join(output)
+
+
+@tool
+def get_file_dependencies(file_path: str, repository_id: str) -> str:
+    """
+    Analyze the dependency graph for a specific file:
+    - Internal repository files it imports
+    - External packages it depends on
+    - Other files in the repository that import this file
+    """
+    deps = knowledge_graph_service.get_file_dependencies(file_path, repository_id)
+    if not deps.get("found"):
+        return f"File '{file_path}' was not found in the repository dependency graph."
+
+    output = [f"## Dependency Graph for `{file_path}`\n"]
+    if deps.get("internal_imports"):
+        output.append("**Internal Files Imported:**")
+        for imp in deps["internal_imports"]:
+            output.append(f"- `{imp}`")
+        output.append("")
+
+    if deps.get("imported_by_files"):
+        output.append("**Imported By Other Files in Repository:**")
+        for imp_by in deps["imported_by_files"]:
+            output.append(f"- `{imp_by}`")
+        output.append("")
+
+    if deps.get("external_packages"):
+        output.append(f"**External Package Dependencies:** `{', '.join(deps['external_packages'])}`\n")
+
+    return "\n".join(output)
+
+
+@tool
+def get_impact_analysis(target: str, repository_id: str) -> str:
+    """
+    Perform blast-radius impact analysis for a symbol or file.
+    Calculates upstream callers, dependent modules, and files that could be affected if the target is modified.
+    """
+    impact = knowledge_graph_service.get_impact_analysis(target, repository_id)
+    output = [
+        f"## Impact Analysis for `{target}`",
+        f"- **Risk Level**: {impact['impact_risk']}",
+        f"- **Affected Symbols**: {impact['affected_symbols_count']}",
+        f"- **Affected Files**: {impact['affected_files_count']}\n"
+    ]
+
+    if impact.get("affected_symbols"):
+        output.append("**Potentially Affected Symbols (Callers / Subclasses):**")
+        for sym in impact["affected_symbols"]:
+            output.append(f"- {sym}")
+        output.append("")
+
+    if impact.get("affected_files"):
+        output.append("**Potentially Affected Files:**")
+        for fp in impact["affected_files"]:
+            output.append(f"- `{fp}`")
+
+    return "\n".join(output)
 
 
 @tool
@@ -61,7 +145,6 @@ def read_file_content(file_path: str, repository_id: str) -> str:
         ).first()
 
         if not db_file:
-            # Try matching by filename instead of exact path
             db_file = db.query(RepositoryFile).filter(
                 RepositoryFile.repository_id == repository_id,
                 RepositoryFile.name == file_path
@@ -100,7 +183,6 @@ def list_code_symbols(repository_id: str) -> str:
         symbols = []
         for ch in chunks:
             sym_type = ch.chunk_type.upper()
-            # Extract symbol name cleanly from chunk_id
             parts = ch.chunk_id.split(f"_{ch.chunk_type}_")
             sym_name = parts[1].split("_")[0] if len(parts) > 1 else ch.chunk_id
             symbols.append(f"- [{sym_type}] {sym_name} in `{ch.file.path}` (Lines {ch.start_line}-{ch.end_line})")
@@ -128,7 +210,6 @@ def get_repository_overview(repository_id: str) -> str:
         if doc and doc.content:
             return doc.content
 
-        # Fallback: compute on the fly if overview doc isn't saved yet
         files = db.query(RepositoryFile).filter(RepositoryFile.repository_id == repository_id).all()
         if not files:
             return "No repository files found. Ingestion may still be processing."
@@ -141,3 +222,32 @@ def get_repository_overview(repository_id: str) -> str:
         return f"Error retrieving repository overview: {str(e)}"
     finally:
         db.close()
+
+
+@tool
+def review_code(repository_id: str, file_path: Optional[str] = None, symbol_name: Optional[str] = None) -> str:
+    """
+    Perform a repository-aware AI code review of a specific file, class, or function.
+    Audits bugs, security vulnerabilities, performance bottlenecks, bad practices, and error handling.
+    Includes blast-radius impact analysis.
+    """
+    from app.services.review_service import ai_code_review_service
+    res = ai_code_review_service.review_codebase(
+        repository_id=repository_id,
+        file_path=file_path,
+        symbol_name=symbol_name
+    )
+
+    output = [res["overall_summary"], "\n### Detailed Findings\n"]
+    if not res.get("findings"):
+        output.append("No specific bugs, security flaws, or code smells detected in this target!")
+    else:
+        for idx, f in enumerate(res["findings"]):
+            output.append(
+                f"{idx + 1}. **[{f['severity'].upper()} - {f['category']}]** `{f['file']}` (Line {f['line']})\n"
+                f"   - **Explanation**: {f['explanation']}\n"
+                f"   - **Suggested Fix**: `{f.get('suggested_fix', 'None')}`\n"
+            )
+
+    return "\n".join(output)
+
