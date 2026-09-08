@@ -1,5 +1,6 @@
 import re
-from typing import List, Dict, Any
+import os
+from typing import List, Dict, Any, Optional
 
 class CodeAnalysisService:
     def analyze_codebase(self, files: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -218,7 +219,126 @@ class CodeAnalysisService:
             else:
                 score -= 5
                 
-        # Keep inside [0, 100]
-        return max(0, min(100, score))
+    def generate_repository_summary(
+        self,
+        files: List[Dict[str, Any]],
+        parsed_structures: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Compiles a comprehensive lightweight architectural summary of the repository:
+        languages, key entry points, primary modules, key classes/functions, and dependency networks.
+        """
+        if not files:
+            return {
+                "summary_text": "Empty repository with no scanned files.",
+                "total_files": 0,
+                "total_lines": 0,
+                "languages": {},
+                "key_files": [],
+                "modules": [],
+                "classes": [],
+                "functions": [],
+                "dependencies": []
+            }
+
+        total_lines = 0
+        lang_counts = {}
+        key_files = []
+        modules = set()
+        all_classes = []
+        all_functions = []
+        all_dependencies = set()
+        inheritance_map = {}
+
+        entrypoint_names = {
+            "main.py", "app.py", "server.py", "wsgi.py", "manage.py",
+            "index.ts", "index.tsx", "index.js", "app.tsx", "page.tsx",
+            "server.js", "main.go", "main.rs", "App.java", "Application.java",
+            "package.json", "requirements.txt", "Dockerfile", "docker-compose.yml"
+        }
+
+        for idx, file in enumerate(files):
+            path = file["path"]
+            name = file.get("name") or os.path.basename(path)
+            lang = file.get("language") or "Unknown"
+            content = file.get("content") or ""
+            file_lines = len(content.splitlines())
+            total_lines += file_lines
+
+            lang_counts[lang] = lang_counts.get(lang, 0) + 1
+
+            # Detect key files
+            if name.lower() in entrypoint_names or "/" not in path:
+                key_files.append({"path": path, "language": lang, "lines": file_lines})
+
+            # Detect module directories
+            dir_name = os.path.dirname(path)
+            if dir_name:
+                top_dir = dir_name.split("/")[0]
+                modules.add(top_dir)
+
+            # Process parsed structure
+            if parsed_structures and idx < len(parsed_structures):
+                parsed = parsed_structures[idx]
+            else:
+                from app.services.parser_service import parser_service
+                parsed = parser_service.parse_file(content, path, lang)
+
+            for cls in parsed.get("classes", []):
+                all_classes.append({
+                    "name": cls["name"],
+                    "file": path,
+                    "bases": cls.get("bases", []),
+                    "methods": cls.get("methods", [])
+                })
+                if cls.get("bases"):
+                    inheritance_map[cls["name"]] = cls["bases"]
+
+            for fn in parsed.get("functions", []):
+                if not fn.get("parent_symbol"):  # top-level functions
+                    all_functions.append({
+                        "name": fn["name"],
+                        "file": path,
+                        "calls": fn.get("calls", [])
+                    })
+
+            for dep in parsed.get("dependencies", []):
+                all_dependencies.add(dep)
+
+        # Build readable Markdown summary
+        key_files_md = "\n".join([f"- `{kf['path']}` ({kf['language']}, {kf['lines']} lines)" for kf in key_files[:10]]) or "- None identified"
+        modules_md = ", ".join(sorted(list(modules))) or "root"
+        classes_md = "\n".join([
+            f"- `{c['name']}` (in `{c['file']}`)" + (f" extends {', '.join(c['bases'])}" if c['bases'] else "")
+            for c in all_classes[:15]
+        ]) or "- No exported classes"
+        functions_md = "\n".join([
+            f"- `{f['name']}()` (in `{f['file']}`)"
+            for f in all_functions[:15]
+        ]) or "- No top-level functions"
+        deps_md = ", ".join(sorted(list(all_dependencies))[:20]) or "None"
+
+        summary_text = (
+            f"## Repository Architecture Overview\n\n"
+            f"- **Total Files**: {len(files)} | **Total Lines of Code**: {total_lines:,}\n"
+            f"- **Primary Languages**: {', '.join([f'{l} ({c} files)' for l, c in sorted(lang_counts.items(), key=lambda x: x[1], reverse=True)[:5]])}\n"
+            f"- **Core Modules/Packages**: {modules_md}\n\n"
+            f"### Key Entry Points & Configuration\n{key_files_md}\n\n"
+            f"### Primary Classes & Entities\n{classes_md}\n\n"
+            f"### Key Functions & Entrypoints\n{functions_md}\n\n"
+            f"### Core External Dependencies\n`{deps_md}`\n"
+        )
+
+        return {
+            "summary_text": summary_text,
+            "total_files": len(files),
+            "total_lines": total_lines,
+            "languages": lang_counts,
+            "key_files": key_files[:15],
+            "modules": sorted(list(modules)),
+            "classes": all_classes[:25],
+            "functions": all_functions[:25],
+            "dependencies": sorted(list(all_dependencies))[:30]
+        }
 
 analysis_service = CodeAnalysisService()

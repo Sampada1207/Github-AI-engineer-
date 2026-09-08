@@ -60,12 +60,18 @@ def process_repository_pipeline(repo_id: str):
             parsed_data = parser_service.parse_file(fd["content"], fd["path"], fd["language"])
             parsed_structures.append(parsed_data)
             
-            # Step 4: Semantic Chunking
-            chunks = parser_service.create_semantic_chunks(fd["content"], fd["path"], parsed_data)
+            # Step 4: Semantic Chunking with rich metadata
+            chunks = parser_service.create_semantic_chunks(
+                file_content=fd["content"],
+                file_path=fd["path"],
+                parsed_data=parsed_data,
+                language=fd["language"]
+            )
             
             # Step 5: Index code chunks locally
             chunk_records = []
             for ch in chunks:
+                sym_type = ch.get("symbol_type") or ch.get("chunk_type", "module")
                 db_chunk = crud.create_chunk(
                     db=db,
                     file_id=db_file.id,
@@ -73,7 +79,7 @@ def process_repository_pipeline(repo_id: str):
                     content=ch["content"],
                     start_line=ch["start_line"],
                     end_line=ch["end_line"],
-                    chunk_type=ch["chunk_type"]
+                    chunk_type=sym_type
                 )
                 chunk_records.append((db_chunk, ch))
 
@@ -86,23 +92,38 @@ def process_repository_pipeline(repo_id: str):
                 # Generate vectors
                 vectors = embedding_service.get_embeddings(chunk_contents)
                 
-                # Upload to Qdrant
+                # Upload to Qdrant with enriched metadata
                 just_chunks = [record[1] for record in chunk_records]
                 vector_ids = qdrant_service.index_chunks(just_chunks, vectors, repo_id)
                 
                 # Save metadata links
-                for (db_chunk, _), vector_id in zip(chunk_records, vector_ids):
+                for (db_chunk, ch_data), vector_id in zip(chunk_records, vector_ids):
                     crud.create_embeddings_metadata(
                         db=db,
                         chunk_id=db_chunk.id,
                         vector_id=vector_id,
-                        metadata={"file_path": db_file.path}
+                        metadata={
+                            "file_path": db_file.path,
+                            "symbol_name": ch_data.get("symbol_name"),
+                            "symbol_type": ch_data.get("symbol_type"),
+                            "parent_symbol": ch_data.get("parent_symbol")
+                        }
                     )
 
-        # Step 7: Run quality calculations and language composition
+        # Step 7: Run quality calculations, repository summary, and language composition
         lang_stats = git_service.calculate_language_stats(files_data)
         quality_results = analysis_service.analyze_codebase(files_data)
+        repo_summary = analysis_service.generate_repository_summary(files_data, parsed_structures)
         
+        # Save Generated Repository Overview Documentation
+        crud.create_documentation(
+            db=db,
+            repository_id=repo_id,
+            doc_type="overview",
+            file_path=None,
+            content=repo_summary["summary_text"]
+        )
+
         # Save Code Review issues
         crud.create_code_review(
             db=db,
