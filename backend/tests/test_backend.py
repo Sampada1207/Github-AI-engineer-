@@ -267,7 +267,39 @@ def test_knowledge_graph_construction_and_isolation():
 
 
 def test_knowledge_graph_relationships_and_usages():
-    repo_id = "repo-kg-test-101"
+    repo_id = "repo-kg-rel-usages-202"
+    files_data = [
+        {
+            "path": "services/auth.py",
+            "name": "auth.py",
+            "language": "Python",
+            "size": 600,
+            "content": (
+                "class BaseAuth:\n"
+                "    pass\n\n"
+                "class AuthService(BaseAuth):\n"
+                "    def authenticate(self, token):\n"
+                "        return validate_token(token)\n\n"
+                "def validate_token(token):\n"
+                "    return True\n"
+            )
+        },
+        {
+            "path": "routes/login.py",
+            "name": "login.py",
+            "language": "Python",
+            "size": 400,
+            "content": (
+                "from services.auth import AuthService\n\n"
+                "def login_route():\n"
+                "    auth = AuthService()\n"
+                "    return auth.authenticate('sample')\n"
+            )
+        }
+    ]
+
+    # Ensure graph is built deterministically for this test
+    knowledge_graph_service.build_graph_from_repository(repo_id, files_data)
     
     # 1. Symbol relationships for AuthService
     auth_rel = knowledge_graph_service.get_symbol_relationships("AuthService", repo_id)
@@ -281,6 +313,7 @@ def test_knowledge_graph_relationships_and_usages():
     usages = knowledge_graph_service.find_symbol_usages("validate_token", repo_id)
     assert usages["total_usages"] >= 1
     assert any(u["caller_name"] == "authenticate" for u in usages["usages"])
+
 
 
 def test_knowledge_graph_file_dependencies_and_impact():
@@ -428,4 +461,46 @@ def test_review_code_agent_tool():
 
     assert "AI Code Review Summary" in tool_out
     assert "Detailed Findings" in tool_out
+
+
+# ================= PHASE 5: SECURITY, EVALUATION & RELIABILITY TESTS =================
+
+def test_git_url_security_validation():
+    # Valid HTTPS & SSH URLs
+    assert git_service.validate_git_url("https://github.com/octocat/Spoon-Knife.git") == "https://github.com/octocat/Spoon-Knife.git"
+    assert git_service.validate_git_url("git@github.com:octocat/Spoon-Knife.git") == "git@github.com:octocat/Spoon-Knife.git"
+
+    # Reject local file URLs and command injection strings
+    with pytest.raises(ValueError, match="Only HTTP\(S\) and git remote URLs are supported"):
+        git_service.validate_git_url("file:///etc/passwd")
+
+    with pytest.raises(ValueError, match="Repository URL contains invalid characters"):
+        git_service.validate_git_url("https://github.com/test.git; rm -rf /")
+
+    with pytest.raises(ValueError, match="Embedded credentials in repository URLs are not allowed"):
+        git_service.validate_git_url("https://user:password@github.com/test.git")
+
+
+def test_path_traversal_rejection_in_tools():
+    from app.agents.tools import read_file_content
+    repo_id = "repo-kg-test-101"
+
+    res1 = read_file_content.invoke({"file_path": "../../../etc/passwd", "repository_id": repo_id})
+    assert "Path traversal or invalid file path detected" in res1
+
+    res2 = read_file_content.invoke({"file_path": "/etc/shadow", "repository_id": repo_id})
+    assert "Path traversal or invalid file path detected" in res2
+
+
+def test_ai_evaluation_suite_benchmark():
+    from app.evaluation.eval_suite import ai_evaluation_suite
+    repo_id = "repo-kg-test-101"
+
+    eval_results = ai_evaluation_suite.run_full_evaluation(repository_id=repo_id)
+
+    assert "overall_evaluation_score" in eval_results
+    assert eval_results["overall_evaluation_score"] >= 80.0
+    assert eval_results["status"] == "PASSED"
+    assert len(eval_results["evaluations"]) == 3
+
 

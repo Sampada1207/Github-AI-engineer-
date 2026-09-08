@@ -137,6 +137,9 @@ def read_file_content(file_path: str, repository_id: str) -> str:
     Read the complete text content of a specific file inside the repository.
     Use this when you know the exact file path and need to inspect full contents and imports.
     """
+    if not file_path or ".." in file_path or file_path.startswith("/") or "\\" in file_path:
+        return "Error: Path traversal or invalid file path detected."
+
     db = SessionLocal()
     try:
         db_file = db.query(RepositoryFile).filter(
