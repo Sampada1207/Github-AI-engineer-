@@ -504,3 +504,126 @@ def test_ai_evaluation_suite_benchmark():
     assert len(eval_results["evaluations"]) == 3
 
 
+# ================= PHASE 6: GIT INTEGRATION & DIFF INTELLIGENCE TESTS =================
+
+def test_revision_validation_and_injection_prevention():
+    from app.services.diff_service import git_diff_service
+
+    # Valid revisions
+    assert git_diff_service.validate_revision("main") == "main"
+    assert git_diff_service.validate_revision("HEAD~1") == "HEAD~1"
+    assert git_diff_service.validate_revision("origin/main") == "origin/main"
+    assert git_diff_service.validate_revision("v1.0.0") == "v1.0.0"
+    assert git_diff_service.validate_revision("a1b2c3d4e5f6") == "a1b2c3d4e5f6"
+
+    # Malicious / Unsafe revisions
+    with pytest.raises(ValueError, match="Invalid revision identifier format"):
+        git_diff_service.validate_revision("--exec=id")
+
+    with pytest.raises(ValueError, match="Revision identifier contains invalid or unsafe characters"):
+        git_diff_service.validate_revision("main; rm -rf /")
+
+    with pytest.raises(ValueError, match="Revision identifier contains invalid or unsafe characters"):
+        git_diff_service.validate_revision("HEAD$(whoami)")
+
+    with pytest.raises(ValueError, match="Revision identifier contains invalid or unsafe characters"):
+        git_diff_service.validate_revision("main | cat /etc/passwd")
+
+
+def test_diff_parsing_and_changed_symbols():
+    from app.services.diff_service import git_diff_service
+
+    raw_diff = (
+        "diff --git a/services/auth.py b/services/auth.py\n"
+        "index 1234567..89abcdef 100644\n"
+        "--- a/services/auth.py\n"
+        "+++ b/services/auth.py\n"
+        "@@ -10,6 +10,8 @@ def authenticate(username, password):\n"
+        "-    old_secret = '123'\n"
+        "+    SECRET_KEY = 'hardcoded_secret_key_12345'\n"
+        "+    def validate_token(token):\n"
+        "+        eval(token)\n"
+    )
+
+    parsed = git_diff_service.parse_diff_text(raw_diff)
+
+    assert len(parsed) == 1
+    file_change = parsed[0]
+    assert file_change["path"] == "services/auth.py"
+    assert file_change["additions"] == 3
+    assert file_change["deletions"] == 1
+    assert "authenticate" in file_change["changed_symbols"] or "validate_token" in file_change["changed_symbols"]
+    assert len(file_change["hunks"]) == 1
+
+
+def test_ai_diff_review_and_impact_analysis():
+    from app.services.diff_service import git_diff_service
+    repo_id = "repo-kg-test-101"
+
+    vulnerable_diff = (
+        "diff --git a/app/security.py b/app/security.py\n"
+        "--- a/app/security.py\n"
+        "+++ b/app/security.py\n"
+        "@@ -5,4 +5,5 @@ class SecurityManager:\n"
+        "+    API_TOKEN = 'secret_token_val_999'\n"
+        "+    def execute_command(cmd):\n"
+        "+        eval(cmd)\n"
+    )
+
+    review_res = git_diff_service.review_diff(
+        repo_id=repo_id,
+        base_revision="main",
+        target_revision="HEAD",
+        diff_text=vulnerable_diff
+    )
+
+    assert review_res["repository_id"] == repo_id
+    assert review_res["total_files_changed"] == 1
+    assert review_res["total_additions"] == 3
+
+    # Check AI review findings structure
+    ai_rev = review_res["ai_review"]
+    findings = ai_rev["findings"]
+    assert len(findings) >= 2
+
+    categories = [f["category"] for f in findings]
+    severities = [f["severity"] for f in findings]
+    assert "Security" in categories
+    assert "Critical" in severities
+
+    for f in findings:
+        assert "severity" in f
+        assert "category" in f
+        assert "file" in f
+        assert "explanation" in f
+        assert "suggested_fix" in f
+        assert "finding_type" in f
+
+
+def test_analyze_diff_agent_tool():
+    from app.agents.tools import analyze_diff
+    repo_id = "repo-kg-test-101"
+
+    diff_text = (
+        "diff --git a/utils/math.py b/utils/math.py\n"
+        "--- a/utils/math.py\n"
+        "+++ b/utils/math.py\n"
+        "@@ -1,3 +1,4 @@\n"
+        "+def add(a, b):\n"
+        "+    return a + b\n"
+    )
+
+    tool_out = analyze_diff.invoke({
+        "repository_id": repo_id,
+        "base_revision": "main",
+        "target_revision": "feature/branch",
+        "diff_text": diff_text
+    })
+
+    assert "Git Diff & Code Change Analysis" in tool_out
+    assert "Files Changed" in tool_out
+    assert "Blast Radius Impact Risk" in tool_out
+    assert "AI Review Findings" in tool_out
+
+
+

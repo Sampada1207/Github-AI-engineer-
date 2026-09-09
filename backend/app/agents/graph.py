@@ -15,7 +15,8 @@ from app.agents.tools import (
     find_symbol_usages,
     get_file_dependencies,
     get_impact_analysis,
-    review_code
+    review_code,
+    analyze_diff
 )
 
 # Complete list of hybrid RAG and knowledge graph tools
@@ -28,7 +29,8 @@ tools_list = [
     find_symbol_usages,
     get_file_dependencies,
     get_impact_analysis,
-    review_code
+    review_code,
+    analyze_diff
 ]
 tools_map = {tool.name: tool for tool in tools_list}
 
@@ -50,15 +52,17 @@ def call_model(state: AgentState, config: RunnableConfig):
         "- `get_file_dependencies`: Trace imported files, dependencies, and all other files that import a given file.\n"
         "- `get_impact_analysis`: Calculate blast radius and potentially affected callers/files if a symbol or file is changed.\n"
         "- `review_code`: Perform repository-aware AI code review auditing bugs, security, performance, maintainability, and blast radius.\n"
+        "- `analyze_diff`: Analyze Git diffs/code changes, changed symbols, blast-radius impact analysis, and AI diff review findings.\n"
         "- `read_file_content`: Inspect full file implementations, imports, and definitions.\n"
         "- `list_code_symbols`: View all classes, methods, and top-level functions in the project.\n\n"
         "Guidelines:\n"
         "1. For architecture / overview queries ('how does this repo work?', 'overview'), use `get_repository_overview`.\n"
         "2. For call hierarchies and impact ('what calls X?', 'if I change Y?'), use `find_symbol_usages` or `get_impact_analysis`.\n"
-        "3. For code reviews ('review this file', 'audit function X'), use `review_code`.\n"
-        "4. When explaining code, explain the structure, containing classes, and function relationships.\n"
-        "5. Always cite file paths, symbol names, and line ranges in markdown format.\n"
-        "6. Be accurate, concise, and structured."
+        "3. For diff/change reviews ('review my latest changes', 'what could this change break?'), use `analyze_diff`.\n"
+        "4. For code reviews ('review this file', 'audit function X'), use `review_code`.\n"
+        "5. When explaining code, explain the structure, containing classes, and function relationships.\n"
+        "6. Always cite file paths, symbol names, and line ranges in markdown format.\n"
+        "7. Be accurate, concise, and structured.\n"
     )
 
     all_messages = [SystemMessage(content=system_prompt)] + list(messages)

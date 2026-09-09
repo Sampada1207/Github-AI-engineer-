@@ -6,7 +6,8 @@ from app.schemas.schemas import (
     GeneratedDocCreate, GeneratedDocResponse,
     GeneratedDiagramCreate, GeneratedDiagramResponse,
     CodeReviewCreate, CodeReviewResponse,
-    AICodeReviewRequest, AICodeReviewResponse
+    AICodeReviewRequest, AICodeReviewResponse,
+    DiffParseRequest, DiffParseResponse, DiffAnalysisResponse
 )
 from app.routes.deps import get_current_user
 from app.models.models import User
@@ -15,6 +16,7 @@ from app.services.diagram_service import diagram_service
 from app.services.parser_service import parser_service
 from app.services.analysis_service import analysis_service
 from app.services.review_service import ai_code_review_service
+from app.services.diff_service import git_diff_service
 from typing import List
 
 router = APIRouter(prefix="/repositories/{repo_id}", tags=["ai_generators"])
@@ -151,4 +153,87 @@ def perform_ai_code_review(
         files_data=files_data
     )
     return result
+
+
+@router.post("/diffs/parse", response_model=DiffParseResponse)
+def parse_repository_diff(
+    repo_id: str,
+    diff_req: DiffParseRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Parses Git diff changes between base and target revisions or raw diff_text."""
+    repo = crud.get_repo_by_id(db, repo_id)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
+    if repo.project.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this repository")
+
+    try:
+        res = git_diff_service.get_repository_diff(
+            repo_id=repo_id,
+            base_revision=diff_req.base_revision or "main",
+            target_revision=diff_req.target_revision or "HEAD",
+            diff_text=diff_req.diff_text
+        )
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+
+
+@router.post("/diffs/analyze", response_model=DiffAnalysisResponse)
+def analyze_repository_diff(
+    repo_id: str,
+    diff_req: DiffParseRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Analyzes diff impact across the repository's Knowledge Graph and Hybrid RAG."""
+    repo = crud.get_repo_by_id(db, repo_id)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
+    if repo.project.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this repository")
+
+    try:
+        res = git_diff_service.review_diff(
+            repo_id=repo_id,
+            base_revision=diff_req.base_revision or "main",
+            target_revision=diff_req.target_revision or "HEAD",
+            diff_text=diff_req.diff_text
+        )
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+
+
+@router.post("/diffs/review", response_model=DiffAnalysisResponse)
+def review_repository_diff(
+    repo_id: str,
+    diff_req: DiffParseRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Runs repository-aware AI Review on a Git diff between two revisions or custom diff_text."""
+    repo = crud.get_repo_by_id(db, repo_id)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
+    if repo.project.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this repository")
+
+    try:
+        db_files = crud.get_files_by_repo(db, repo_id)
+        files_data = [{"path": f.path, "name": f.name, "language": f.language, "size": f.size, "content": f.content} for f in db_files]
+
+        res = git_diff_service.review_diff(
+            repo_id=repo_id,
+            base_revision=diff_req.base_revision or "main",
+            target_revision=diff_req.target_revision or "HEAD",
+            diff_text=diff_req.diff_text,
+            files_data=files_data
+        )
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+
 

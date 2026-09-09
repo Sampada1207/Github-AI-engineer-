@@ -213,7 +213,8 @@ class KnowledgeGraphService:
                 parent_cls = fn.get("parent_symbol")
                 sym_type = fn.get("symbol_type", "function")
                 fn_node_id = f"{sym_type}:{path}:{parent_cls or 'top'}:{fn_name}"
-                symbol_node_ids[fn_name] = fn_node_id
+                if fn_name not in symbol_node_ids:
+                    symbol_node_ids[fn_name] = fn_node_id
                 if parent_cls:
                     symbol_node_ids[f"{parent_cls}.{fn_name}"] = fn_node_id
 
@@ -383,8 +384,16 @@ class KnowledgeGraphService:
                 "message": f"Symbol '{symbol_name}' not found in repository knowledge graph."
             }
 
+        # Deterministic sorting: Class/Interface nodes first, then function/method/variable
+        def _node_priority(nid: str):
+            node = graph.nodes.get(nid)
+            t_prio = {"class": 0, "interface": 1, "function": 2, "method": 3, "module": 4, "variable": 5}
+            return (t_prio.get(node.type if node else "", 9), nid)
+
+        sorted_matched_ids = sorted(list(matched_node_ids), key=_node_priority)
+
         results = []
-        for nid in matched_node_ids:
+        for nid in sorted_matched_ids:
             node = graph.nodes.get(nid)
             if not node:
                 continue

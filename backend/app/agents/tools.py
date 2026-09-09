@@ -254,3 +254,49 @@ def review_code(repository_id: str, file_path: Optional[str] = None, symbol_name
 
     return "\n".join(output)
 
+
+@tool
+def analyze_diff(repository_id: str, base_revision: str = "main", target_revision: str = "HEAD", diff_text: Optional[str] = None) -> str:
+    """
+    Analyze Git diff / code changes between base_revision and target_revision (or custom diff_text).
+    Evaluates changed files, additions/deletions, changed symbols, downstream impact analysis (blast radius),
+    and performs AI review findings for bugs, security risks, or breaking changes.
+    """
+    from app.services.diff_service import git_diff_service
+    try:
+        review_res = git_diff_service.review_diff(
+            repo_id=repository_id,
+            base_revision=base_revision,
+            target_revision=target_revision,
+            diff_text=diff_text
+        )
+        ai_rev = review_res.get("ai_review", {})
+        summary = ai_rev.get("summary", {})
+        findings = ai_rev.get("findings", [])
+        impact = review_res.get("impact_analysis", {})
+
+        output = [
+            f"## Git Diff & Code Change Analysis (`{review_res['base_revision']}` -> `{review_res['target_revision']}`)\n",
+            f"- **Files Changed**: {review_res['total_files_changed']} (+{review_res['total_additions']} / -{review_res['total_deletions']})",
+            f"- **Changed Symbols**: {', '.join(review_res['changed_symbols']) or 'None detected'}",
+            f"- **Blast Radius Impact Risk**: {impact.get('impact_risk', 'Low')} (Blast Radius Score: {impact.get('blast_radius_score', 0)}/100)",
+            f"- **Potentially Affected Callers / Subclasses**: {impact.get('affected_symbols_count', 0)} symbols, {impact.get('affected_files_count', 0)} files\n",
+            "### AI Review Findings"
+        ]
+
+        if not findings:
+            output.append("No critical issues, security risks, or breaking bugs detected in this diff!")
+        else:
+            for idx, f in enumerate(findings):
+                output.append(
+                    f"{idx + 1}. **[{f.get('severity', 'Medium').upper()} - {f.get('category', 'General')}]** `{f['file']}` ({f.get('line', 'N/A')})\n"
+                    f"   - **Finding Type**: {f.get('finding_type', 'issue in changed code')}\n"
+                    f"   - **Explanation**: {f['explanation']}\n"
+                    f"   - **Suggested Fix**: `{f.get('suggested_fix', 'None')}`\n"
+                )
+
+        return "\n".join(output)
+    except Exception as e:
+        return f"Error analyzing diff: {str(e)}"
+
+

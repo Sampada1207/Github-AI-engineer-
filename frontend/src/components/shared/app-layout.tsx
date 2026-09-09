@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { 
   LayoutDashboard, FolderKanban, MessageSquare, BookOpen, 
-  Network, ShieldCheck, Settings, LogOut, Code2, Menu, X, ArrowLeft 
+  Network, ShieldCheck, Settings, LogOut, Code2, Menu, X, ArrowLeft, GitCompare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -33,6 +33,7 @@ export function AppLayout({ children, repositoryId, repositoryName }: AppLayoutP
     { name: "Documentation", href: `/repository/${repositoryId}/documentation`, icon: BookOpen },
     { name: "Architecture", href: `/repository/${repositoryId}/architecture`, icon: Network },
     { name: "Code Quality", href: `/repository/${repositoryId}/review`, icon: ShieldCheck },
+    { name: "Diff Review", href: `/repository/${repositoryId}/diff`, icon: GitCompare },
   ] : [];
 
   const footerNavigation = [

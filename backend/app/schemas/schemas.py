@@ -205,3 +205,39 @@ class AICodeReviewResponse(BaseModel):
     impact_analysis: Dict[str, Any]
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+# ================= GIT DIFF & CHANGE INTELLIGENCE SCHEMAS =================
+class DiffParseRequest(BaseModel):
+    base_revision: Optional[str] = "main"
+    target_revision: Optional[str] = "HEAD"
+    diff_text: Optional[str] = None
+
+class DiffFileChange(BaseModel):
+    path: str
+    change_type: str  # "modified", "added", "deleted"
+    additions: int = 0
+    deletions: int = 0
+    changed_symbols: List[str] = []
+    hunks: List[Dict[str, Any]] = []
+
+class DiffParseResponse(BaseModel):
+    repository_id: str
+    base_revision: str
+    target_revision: str
+    total_files_changed: int
+    total_additions: int
+    total_deletions: int
+    files: List[DiffFileChange]
+
+class DiffAnalysisResponse(BaseModel):
+    repository_id: str
+    base_revision: str
+    target_revision: str
+    total_files_changed: int
+    total_additions: int
+    total_deletions: int
+    changed_symbols: List[str]
+    impact_analysis: Dict[str, Any]
+    ai_review: Dict[str, Any]
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
