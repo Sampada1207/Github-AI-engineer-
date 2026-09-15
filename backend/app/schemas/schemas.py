@@ -278,5 +278,48 @@ class PRReviewResponse(BaseModel):
     github_review_summary: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+# ================= AUTOMATED PR REVIEW & WEBHOOK SCHEMAS =================
+class GitHubWebhookEvent(BaseModel):
+    event_id: str
+    event_type: str
+    action: str
+    repository: str
+    pr_number: int
+
+class AutomatedPRReviewRequest(BaseModel):
+    repository_owner: str
+    repository_name: str
+    pr_number: int
+    action: str
+    head_sha: Optional[str] = None
+    installation_id: Optional[str] = None
+
+class AutomatedPRReviewResponse(BaseModel):
+    status: str  # "dry-run", "processed", "ignored", "disabled", "error"
+    repository: str
+    pull_request_number: int
+    action: str
+    review_triggered: bool = False
+    dry_run: bool = True
+    summary: Optional[str] = ""
+    findings_count: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class WebhookLogResponse(BaseModel):
+    id: str
+    event_id: str
+    event_type: str
+    action: str
+    repository: str
+    pr_number: int
+    status: str
+    summary: Optional[str] = ""
+    findings_count: int = 0
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 
 

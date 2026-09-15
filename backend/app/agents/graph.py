@@ -16,7 +16,8 @@ from app.agents.tools import (
     get_file_dependencies,
     get_impact_analysis,
     review_code,
-    analyze_diff
+    analyze_diff,
+    trigger_automated_pr_review
 )
 
 # Complete list of hybrid RAG and knowledge graph tools
@@ -30,8 +31,10 @@ tools_list = [
     get_file_dependencies,
     get_impact_analysis,
     review_code,
-    analyze_diff
+    analyze_diff,
+    trigger_automated_pr_review
 ]
+
 tools_map = {tool.name: tool for tool in tools_list}
 
 

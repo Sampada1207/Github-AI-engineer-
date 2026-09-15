@@ -54,12 +54,46 @@ Create `.env` files in `backend/` and `frontend/` using `.env.example` as a temp
 | `QDRANT_API_KEY` | API Key for Qdrant Cloud | `your_qdrant_api_key` |
 | `OPENAI_API_KEY` | OpenAI API key for LLM inference | `sk-...` |
 | `GITHUB_TOKEN` | GitHub Personal Access Token for PR access | `ghp_...` |
+| `GITHUB_APP_ID` | GitHub App ID for authentication | `123456` |
+| `GITHUB_APP_PRIVATE_KEY` | GitHub App RS256 private key | `-----BEGIN RSA PRIVATE KEY-----...` |
+| `GITHUB_WEBHOOK_SECRET` | Secret key for HMAC SHA-256 signature verification | `your_webhook_secret` |
+| `GITHUB_APP_INSTALLATION_ID` | Default installation ID | `12345678` |
+| `GITHUB_PR_AUTOMATION_MODE` | Automation execution mode (`dry-run` / `disabled`) | `dry-run` |
 
 ### Frontend Variable (`frontend/.env`)
 
 | Variable | Description | Default / Example |
 | :--- | :--- | :--- |
 | `NEXT_PUBLIC_API_URL` | Production backend REST API base URL | `http://localhost:8080/api` |
+
+---
+
+## 🤖 GitHub App & Webhook PR Automation
+
+```
+GitHub PR Event (opened/sync/reopen)
+       │
+       ▼
+[POST /api/webhooks/github] ──► Verify HMAC SHA-256 Signature
+       │
+       ▼
+[PRAutomationService] ────────► Idempotency & Action Check
+       │
+       ▼
+[GitHubService] ──────────────► Fetch PR Metadata & Diff
+       │
+       ▼
+[Diff + KG + RAG + AI Review] ─► Complete Intelligence Pipeline
+       │
+       ▼
+[DRY-RUN Execution] ──────────► Log & Return Structured Summary (No auto-posting)
+```
+
+1. **Webhook Security**: Verifies `X-Hub-Signature-256` header using constant-time HMAC SHA-256 verification (`hmac.compare_digest`).
+2. **Supported Events**: `pull_request` (actions: `opened`, `synchronize`, `reopened`).
+3. **Dry-Run Mode**: Defaults to `GITHUB_PR_AUTOMATION_MODE=dry-run`. Executes complete PR intelligence analysis and logs output without automatically commenting on GitHub.
+4. **Idempotency**: Prevents duplicate webhook deliveries using `WebhookEventLog` event tracking.
+
 
 ---
 

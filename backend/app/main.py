@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine, Base
-from app.routes import auth_router, projects_router, repos_router, chat_router, ai_router
+from app.routes import auth_router, projects_router, repos_router, chat_router, ai_router, webhooks_router
 import app.models.models  # noqa: F401 — register ORM models
 
 Base.metadata.create_all(bind=engine)
@@ -30,6 +30,8 @@ app.include_router(projects_router, prefix=settings.API_V1_STR)
 app.include_router(repos_router, prefix=settings.API_V1_STR)
 app.include_router(chat_router, prefix=settings.API_V1_STR)
 app.include_router(ai_router, prefix=settings.API_V1_STR)
+app.include_router(webhooks_router)
+
 
 @app.get("/")
 def read_root():

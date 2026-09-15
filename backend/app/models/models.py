@@ -186,3 +186,19 @@ class CodeReview(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     repository = relationship("Repository", back_populates="reviews")
+
+
+class WebhookEventLog(Base):
+    __tablename__ = "webhook_event_logs"
+
+    id = Column(GUID(), primary_key=True, default=lambda: str(uuid.uuid4()))
+    event_id = Column(String(255), unique=True, index=True, nullable=False)
+    event_type = Column(String(100), nullable=False)
+    action = Column(String(100), nullable=False)
+    repository = Column(String(255), nullable=False)
+    pr_number = Column(Integer, nullable=False)
+    status = Column(String(50), nullable=False)  # "processed", "ignored", "failed", "dry-run", "disabled"
+    summary = Column(Text, nullable=True)
+    findings_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+

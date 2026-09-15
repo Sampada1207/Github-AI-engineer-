@@ -300,3 +300,36 @@ def analyze_diff(repository_id: str, base_revision: str = "main", target_revisio
         return f"Error analyzing diff: {str(e)}"
 
 
+@tool
+def trigger_automated_pr_review(repository_owner: str, repository_name: str, pr_number: int, action: str = "opened") -> str:
+    """
+    Trigger automated GitHub Pull Request intelligence review pipeline in DRY-RUN mode.
+    Evaluates PR metadata, diff changes, Knowledge Graph blast radius, and AI review findings.
+    """
+    from app.services.pr_automation_service import pr_automation_service
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        payload = {
+            "action": action,
+            "number": pr_number,
+            "repository": {"name": repository_name, "owner": {"login": repository_owner}},
+            "pull_request": {"number": pr_number, "title": f"PR #{pr_number}", "html_url": f"https://github.com/{repository_owner}/{repository_name}/pull/{pr_number}", "head": {"ref": "head", "sha": "abc1234"}, "base": {"ref": "main"}}
+        }
+        res = pr_automation_service.process_webhook_pr_event(db, payload)
+        return (
+            f"## Automated PR Review Execution (Mode: {res.status.upper()})\n"
+            f"- **Repository**: `{res.repository}`\n"
+            f"- **PR Number**: #{res.pull_request_number}\n"
+            f"- **Action**: `{res.action}`\n"
+            f"- **Review Triggered**: {res.review_triggered} (Dry-Run: {res.dry_run})\n"
+            f"- **Findings Count**: {res.findings_count}\n\n"
+            f"### Review Summary:\n{res.summary}"
+        )
+    except Exception as e:
+        return f"Error executing automated PR review tool: {str(e)}"
+    finally:
+        db.close()
+
+
+

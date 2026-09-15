@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
   GitPullRequest, Sparkles, Loader2, Play, AlertTriangle, 
-  Bug, ShieldAlert, FileText, Check, ArrowRight, Activity, Zap, Code, ExternalLink, Copy
+  Bug, ShieldAlert, FileText, Check, ArrowRight, Activity, Zap, Code, ExternalLink, Copy, Webhook, Radio, Clock, ShieldCheck
 } from "lucide-react";
 
 interface PRInfo {
@@ -62,6 +62,19 @@ interface PRReviewResponse {
   github_review_summary: string;
 }
 
+interface AutomationLog {
+  id: string;
+  event_id: string;
+  event_type: string;
+  action: string;
+  repository: string;
+  pr_number: number;
+  status: string;
+  summary?: string;
+  findings_count: number;
+  created_at: string;
+}
+
 export default function RepositoryPRReviewPage() {
   const params = useParams();
   const repoId = params.id as string;
@@ -76,13 +89,27 @@ export default function RepositoryPRReviewPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const [autoStatus, setAutoStatus] = useState<any>(null);
+  const [automationLogs, setAutomationLogs] = useState<AutomationLog[]>([]);
+
   useEffect(() => {
-    async function loadRepo() {
+    async function loadData() {
       try {
         const repoData = await fetchApi(`/repositories/${repoId}`);
         setRepo(repoData);
         if (repoData?.url) {
           setGithubRepoInput(repoData.url);
+        }
+
+        // Fetch automation status and logs
+        try {
+          const statusData = await fetchApi("/webhooks/status");
+          setAutoStatus(statusData);
+
+          const logsData = await fetchApi(`/repositories/${repoId}/pull-requests/automations`);
+          setAutomationLogs(logsData || []);
+        } catch (err) {
+          console.warn("Could not load webhook automation logs:", err);
         }
       } catch (err: any) {
         console.error("Failed to load repo:", err);
@@ -90,7 +117,7 @@ export default function RepositoryPRReviewPage() {
         setLoadingRepo(false);
       }
     }
-    loadRepo();
+    loadData();
   }, [repoId]);
 
   const handleRunPRReview = async (e?: React.FormEvent) => {
@@ -184,12 +211,85 @@ export default function RepositoryPRReviewPage() {
           </div>
         </div>
 
+        {/* PR Automation Status Banner */}
+        <Card className="border-slate-800 bg-slate-900/60 backdrop-blur-sm">
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Webhook className="h-5 w-5 text-purple-400" />
+              <CardTitle className="text-base font-semibold text-slate-200">
+                Automated PR Review Webhook Status
+              </CardTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-400">Automation Mode:</span>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                {autoStatus?.automation_mode || "DRY-RUN"}
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center gap-3">
+                <Radio className="h-4 w-4 text-emerald-400" />
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Webhook Endpoint</span>
+                  <code className="text-purple-300 font-mono text-[11px]">/api/webhooks/github</code>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center gap-3">
+                <ShieldCheck className="h-4 w-4 text-purple-400" />
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">HMAC Signature</span>
+                  <span className="text-slate-200 font-medium">
+                    {autoStatus?.webhook_secret_configured ? "HMAC SHA-256 Verified" : "Secret Unconfigured"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center gap-3">
+                <Clock className="h-4 w-4 text-amber-400" />
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Supported Events</span>
+                  <span className="text-slate-200 font-medium">pull_request (opened, sync, reopen)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Automation Logs List */}
+            {automationLogs.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-800 space-y-2">
+                <span className="text-xs font-semibold text-slate-300 block">
+                  Recent Webhook Review Logs ({automationLogs.length})
+                </span>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {automationLogs.map((log) => (
+                    <div key={log.id} className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs flex items-center justify-between font-mono">
+                      <div className="flex items-center gap-2">
+                        <span className="text-purple-400 font-bold">PR #{log.pr_number}</span>
+                        <span className="text-slate-400">({log.action})</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-amber-500/20 text-amber-300">
+                          {log.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 text-slate-400">
+                        <span>Findings: {log.findings_count}</span>
+                        <span className="text-[10px]">{new Date(log.created_at).toLocaleTimeString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* PR Selection & Configuration */}
         <Card className="border-slate-800 bg-slate-900/60 backdrop-blur-sm">
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-semibold text-slate-200 flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-purple-400" />
-              Target Pull Request
+              Manual PR Review Trigger
             </CardTitle>
             <CardDescription className="text-slate-400 text-xs">
               Specify the GitHub repository URL or owner/repo identifier and PR number.
@@ -370,7 +470,6 @@ export default function RepositoryPRReviewPage() {
                     AI Review Findings ({reviewResult.findings.length})
                   </CardTitle>
                 </div>
-                {/* Severity Pills */}
                 <div className="flex items-center gap-2 text-xs">
                   {Object.entries(reviewResult.severity_summary).map(([sev, count]) => (
                     <span 

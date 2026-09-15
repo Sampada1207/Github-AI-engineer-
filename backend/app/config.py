@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     # GitHub API Configuration
     GITHUB_TOKEN: Optional[str] = None
 
+    # GitHub App & Automation Configuration
+    GITHUB_APP_ID: Optional[str] = None
+    GITHUB_APP_PRIVATE_KEY: Optional[str] = None
+    GITHUB_WEBHOOK_SECRET: Optional[str] = None
+    GITHUB_APP_INSTALLATION_ID: Optional[str] = None
+    GITHUB_APP_ENABLED: bool = False
+    GITHUB_PR_AUTOMATION_MODE: str = "dry-run"  # options: "disabled", "dry-run"
+
+
     # Canonical on-disk location for temporary clones
     CLONED_REPOS_DIR: str = "./cloned_repos"
 
