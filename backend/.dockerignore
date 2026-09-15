@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+cloned_repos
+qdrant_data
+.env
+.env.local
+.DS_Store

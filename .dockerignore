@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.local
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+node_modules
+.next
+out
+cloned_repos
+qdrant_data
+.DS_Store

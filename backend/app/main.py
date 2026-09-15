@@ -38,3 +38,23 @@ def read_root():
         "app_name": settings.APP_NAME,
         "message": "Welcome to GitHub AI Engineer API portal. Access documentation at /docs"
     }
+
+@app.get("/health")
+@app.get(f"{settings.API_V1_STR}/health")
+def health_check():
+    db_status = "ok"
+    try:
+        from app.database import engine
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception:
+        db_status = "disconnected"
+
+    return {
+        "status": "healthy" if db_status == "ok" else "degraded",
+        "app_name": settings.APP_NAME,
+        "database": db_status,
+        "environment": "development" if settings.DEBUG else "production"
+    }
+
