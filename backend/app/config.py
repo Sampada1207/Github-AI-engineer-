@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     EMBEDDING_MODEL: str = "BAAI/bge-large-en-v1.5"
 
+    # GitHub API Configuration
+    GITHUB_TOKEN: Optional[str] = None
+
     # Canonical on-disk location for temporary clones
     CLONED_REPOS_DIR: str = "./cloned_repos"
 

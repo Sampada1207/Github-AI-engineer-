@@ -28,15 +28,31 @@ class QdrantService:
         self._initialized = False
 
     def ensure_collection(self, vector_size: int):
-        """Creates collection if it doesn't already exist."""
-        if self._initialized:
+        """Creates or updates collection if vector size changes or collection doesn't exist."""
+        if getattr(self, "_current_vector_size", None) == vector_size and self._initialized:
             return
 
         try:
             collections = self.client.get_collections().collections
             collection_names = [col.name for col in collections]
 
-            if self.collection_name not in collection_names:
+            if self.collection_name in collection_names:
+                info = self.client.get_collection(self.collection_name)
+                existing_size = None
+                if hasattr(info.config.params, "vectors") and hasattr(info.config.params.vectors, "size"):
+                    existing_size = info.config.params.vectors.size
+
+                if existing_size and existing_size != vector_size:
+                    print(f"Recreating Qdrant collection '{self.collection_name}': size mismatch ({existing_size} != {vector_size})")
+                    self.client.delete_collection(self.collection_name)
+                    self.client.create_collection(
+                        collection_name=self.collection_name,
+                        vectors_config=rest_models.VectorParams(
+                            size=vector_size,
+                            distance=rest_models.Distance.COSINE
+                        )
+                    )
+            else:
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=rest_models.VectorParams(
@@ -45,9 +61,12 @@ class QdrantService:
                     )
                 )
                 print(f"Created Qdrant collection: {self.collection_name} (size={vector_size})")
+
             self._initialized = True
+            self._current_vector_size = vector_size
         except Exception as e:
             print(f"Error checking/creating Qdrant collection: {e}")
+
 
     def index_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]], repository_id: str) -> List[str]:
         """

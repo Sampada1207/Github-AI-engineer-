@@ -240,4 +240,43 @@ class DiffAnalysisResponse(BaseModel):
     ai_review: Dict[str, Any]
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+# ================= GITHUB PULL REQUEST INTEGRATION SCHEMAS =================
+class PRReviewRequest(BaseModel):
+    github_repo: Optional[str] = None  # e.g., "owner/repo" or full URL
+    pr_number: int
+
+class PRInfo(BaseModel):
+    id: Optional[int] = None
+    number: int
+    title: str
+    state: str
+    body: Optional[str] = ""
+    author: str
+    html_url: str
+    base_ref: str
+    head_ref: str
+    draft: bool = False
+    merged: bool = False
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    additions: int = 0
+    deletions: int = 0
+    changed_files: int = 0
+
+class PRReviewResponse(BaseModel):
+    repository_id: str
+    github_repo: str
+    pr_info: PRInfo
+    total_files_changed: int
+    total_additions: int
+    total_deletions: int
+    changed_symbols: List[str]
+    files: List[DiffFileChange] = []
+    severity_summary: Dict[str, int]
+    findings: List[AICodeReviewFinding]
+    impact_analysis: Dict[str, Any]
+    github_review_summary: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 
